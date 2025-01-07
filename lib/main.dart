@@ -8,7 +8,7 @@ void main() {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-  
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -27,11 +27,11 @@ class FileSearchPage extends StatefulWidget {
 }
 
 class _FileSearchPageState extends State<FileSearchPage> {
-  String _fileContent = ''; // สำหรับเก็บเนื้อหาของไฟล์
-  String _searchTerm = ''; // สำหรับเก็บคำค้นหา
-  List<String> _searchResults = []; // ผลลัพธ์จากการค้นหา
+  String _fileContent = ''; 
+  String _searchTerm = ''; 
+  List<String> _searchResults = []; 
 
-  // ฟังก์ชันในการเลือกไฟล์ .log
+  
   Future<void> _pickFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -42,7 +42,7 @@ class _FileSearchPageState extends State<FileSearchPage> {
       String filePath = result.files.single.path!;
       File file = File(filePath);
 
-      // อ่านไฟล์ .log
+      
       String content = await file.readAsString();
       setState(() {
         _fileContent = content;
@@ -50,19 +50,16 @@ class _FileSearchPageState extends State<FileSearchPage> {
     }
   }
 
-  // ฟังก์ชันการค้นหาภายในไฟล์ (นับจำนวนคำทั้งหมด)
+
   void _searchInFile() {
     List<String> results = [];
-    List<String> lines = _fileContent.split('\n'); // แบ่งเนื้อหาเป็นบรรทัด
-    int matchCount = 0; // ตัวแปรนับจำนวนคำที่ตรงกับคำค้นหา
+    List<String> lines = _fileContent.split('\n'); 
+    int matchCount = 0; 
 
     for (var line in lines) {
       if (line.toLowerCase().contains(_searchTerm.toLowerCase())) {
-        // นับจำนวนครั้งที่คำปรากฏในบรรทัด
         int countInLine = _countOccurrences(line, _searchTerm);
         matchCount += countInLine;
-
-        // เพิ่มบรรทัดที่ตรงกับคำค้นหาในผลลัพธ์
         results.add(line);
       }
     }
@@ -71,7 +68,6 @@ class _FileSearchPageState extends State<FileSearchPage> {
       _searchResults = results;
     });
 
-    // แสดงจำนวนคำที่ตรงกันทั้งหมด
     if (_searchTerm.isNotEmpty) {
       showDialog(
         context: context,
@@ -93,14 +89,13 @@ class _FileSearchPageState extends State<FileSearchPage> {
     }
   }
 
-  // ฟังก์ชันนับจำนวนคำที่ตรงกันในแต่ละบรรทัด
+
   int _countOccurrences(String line, String term) {
     final lowerLine = line.toLowerCase();
     final lowerTerm = term.toLowerCase();
     int count = 0;
     int index = lowerLine.indexOf(lowerTerm);
 
-    // วนลูปเพื่อหาคำที่ปรากฏในบรรทัด
     while (index != -1) {
       count++;
       index = lowerLine.indexOf(lowerTerm, index + lowerTerm.length);
