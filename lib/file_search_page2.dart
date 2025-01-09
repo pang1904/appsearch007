@@ -1,38 +1,18 @@
-// main.dart
+// file_search_page2.dart
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
-import 'file_search_page2.dart'; // นำเข้าหน้า FileSearchPage2
 
-void main() {
-  runApp(MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+class FileSearchPage2 extends StatefulWidget {
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'แอพค้นหาคำ',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: FileSearchPage(),
-    );
-  }
+  _FileSearchPage2State createState() => _FileSearchPage2State();
 }
 
-class FileSearchPage extends StatefulWidget {
-  @override
-  _FileSearchPageState createState() => _FileSearchPageState();
-}
-
-class _FileSearchPageState extends State<FileSearchPage> {
+class _FileSearchPage2State extends State<FileSearchPage2> {
   String _fileContent = '';
   String _searchTerm = '';
   List<String> _searchResults = [];
-  String _selectedItem = 'Item1';
+  String _selectedItem = 'Item1'; // ค่าเริ่มต้นของ Dropdown
   final List<String> _items = ['Item1', 'Item2'];
 
   Future<void> _pickFile() async {
@@ -108,7 +88,7 @@ class _FileSearchPageState extends State<FileSearchPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('แอพค้นหาคำ'),
+        title: Text('แอพค้นหาคำ (หน้าที่สอง)'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -135,13 +115,6 @@ class _FileSearchPageState extends State<FileSearchPage> {
                       setState(() {
                         _selectedItem = newValue!;
                       });
-
-                      if (_selectedItem == 'Item2') {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => FileSearchPage2()), // ไปยังหน้าที่สอง
-                        );
-                      }
                     },
                     isExpanded: true,
                     icon: Icon(Icons.arrow_downward, color: Colors.black),
