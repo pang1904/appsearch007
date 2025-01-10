@@ -1,8 +1,9 @@
-// main.dart
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
-import 'file_search_page2.dart'; // นำเข้าหน้า FileSearchPage2
+import 'package:csv/csv.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 
 void main() {
   runApp(MyApp());
@@ -32,8 +33,7 @@ class _FileSearchPageState extends State<FileSearchPage> {
   String _fileContent = '';
   String _searchTerm = '';
   List<String> _searchResults = [];
-  String _selectedItem = 'Item1';
-  final List<String> _items = ['Item1', 'Item2'];
+  String? _csvFilePath;
 
   Future<void> _pickFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -55,12 +55,26 @@ class _FileSearchPageState extends State<FileSearchPage> {
   void _searchInFile() {
     List<String> results = [];
     List<String> lines = _fileContent.split('\n');
-    int matchCount = 0;
+    Map<String, int> termCounts = {};
+    int totalMatchCount = 0;
+
+    List<String> searchTerms = _searchTerm.contains(',')
+        ? _searchTerm.split(',').map((e) => e.trim()).toList()
+        : [_searchTerm];
 
     for (var line in lines) {
-      if (line.toLowerCase().contains(_searchTerm.toLowerCase())) {
-        int countInLine = _countOccurrences(line, _searchTerm);
-        matchCount += countInLine;
+      bool isMatched = false;
+
+      for (var term in searchTerms) {
+        if (line.toLowerCase().contains(term.toLowerCase())) {
+          int countInLine = _countOccurrences(line, term);
+          termCounts[term] = (termCounts[term] ?? 0) + countInLine;
+          totalMatchCount += countInLine;
+          isMatched = true;
+        }
+      }
+
+      if (isMatched) {
         results.add(line);
       }
     }
@@ -70,12 +84,19 @@ class _FileSearchPageState extends State<FileSearchPage> {
     });
 
     if (_searchTerm.isNotEmpty) {
+      StringBuffer resultSummary = StringBuffer();
+
+      termCounts.forEach((term, count) {
+        resultSummary.writeln('คำ "$term" พบ $count ครั้ง');
+      });
+      resultSummary.writeln('\nรวมทั้งหมด $totalMatchCount ครั้ง');
+
       showDialog(
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
             title: Text('ผลการค้นหา'),
-            content: Text('พบ $matchCount คำที่ตรงกับ "$_searchTerm".'),
+            content: Text(resultSummary.toString()),
             actions: <Widget>[
               TextButton(
                 onPressed: () {
@@ -87,6 +108,11 @@ class _FileSearchPageState extends State<FileSearchPage> {
           );
         },
       );
+
+      // แสดงปุ่มให้ผู้ใช้บันทึกไฟล์ .csv
+      setState(() {
+        _csvFilePath = null; // ล้างเส้นทางไฟล์เก่า
+      });
     }
   }
 
@@ -104,6 +130,33 @@ class _FileSearchPageState extends State<FileSearchPage> {
     return count;
   }
 
+  Future<void> _saveSearchResultsToCSV() async {
+    if (_searchResults.isNotEmpty) {
+      // แปลงผลการค้นหาเป็น list ของ list เพื่อใช้ใน CSV
+      List<List<dynamic>> rows = [];
+      rows.add(['ผลการค้นหา']); // หัวคอลัมน์ CSV
+
+      for (var result in _searchResults) {
+        rows.add([result]);
+      }
+
+      // บันทึกไฟล์ลงที่เก็บภายนอก (External Storage)
+      final directory = await getExternalStorageDirectory();
+      final path = '${directory!.path}/search_results.csv';
+      File file = File(path);
+
+      await file.writeAsString(const ListToCsvConverter().convert(rows));
+
+      setState(() {
+        _csvFilePath = path;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('บันทึกผลการค้นหาลงไฟล์: $path')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -114,57 +167,16 @@ class _FileSearchPageState extends State<FileSearchPage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 150,
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.black, width: 2),
-                  ),
-                  child: DropdownButton<String>(
-                    value: _selectedItem,
-                    items: _items.map((String item) {
-                      return DropdownMenuItem<String>(
-                        value: item,
-                        child: Text(item),
-                      );
-                    }).toList(),
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        _selectedItem = newValue!;
-                      });
-
-                      if (_selectedItem == 'Item2') {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => FileSearchPage2()), // ไปยังหน้าที่สอง
-                        );
-                      }
-                    },
-                    isExpanded: true,
-                    icon: Icon(Icons.arrow_downward, color: Colors.black),
-                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-                    underline: SizedBox(),
-                  ),
-                ),
-                SizedBox(width: 16),
-
-                Expanded(
-                  child: TextField(
-                    onChanged: (value) {
-                      setState(() {
-                        _searchTerm = value;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'พิมพ์คำที่ต้องการค้นหา',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
+            TextField(
+              onChanged: (value) {
+                setState(() {
+                  _searchTerm = value;
+                });
+              },
+              decoration: InputDecoration(
+                labelText: 'พิมพ์คำที่ต้องการค้นหา (ใช้ , เพื่อค้นหาหลายคำ)',
+                border: OutlineInputBorder(),
+              ),
             ),
             SizedBox(height: 16),
 
@@ -178,6 +190,13 @@ class _FileSearchPageState extends State<FileSearchPage> {
               onPressed: _searchInFile,
               child: Text('ค้นหาในไฟล์'),
             ),
+            SizedBox(height: 16),
+
+            if (_searchResults.isNotEmpty)
+              ElevatedButton(
+                onPressed: _saveSearchResultsToCSV,
+                child: Text('บันทึกผลการค้นหาเป็นไฟล์ .csv'),
+              ),
             SizedBox(height: 16),
 
             Expanded(
