@@ -3,7 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter/services.dart';
+import 'dart:convert';  // นำเข้าเพื่อใช้ UTF-8
 
 void main() {
   runApp(MyApp());
@@ -36,38 +36,56 @@ class _FileSearchPageState extends State<FileSearchPage> {
   String? _csvFilePath;
 
   Future<void> _pickFile() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['log'],
-    );
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['log'],
+      );
 
-    if (result != null) {
-      String filePath = result.files.single.path!;
-      File file = File(filePath);
+      if (result != null) {
+        String filePath = result.files.single.path!;
+        File file = File(filePath);
 
-      String content = await file.readAsString();
-      setState(() {
-        _fileContent = content;
-      });
+        String content = await file.readAsString();
+        setState(() {
+          _fileContent = content;
+          _searchResults.clear(); // ล้างผลการค้นหาเก่าทุกครั้งที่อัปโหลดไฟล์ใหม่
+        });
+      } else {
+        _showSnackBar('การเลือกไฟล์ถูกยกเลิก');
+      }
+    } catch (e) {
+      _showSnackBar('เกิดข้อผิดพลาดในการอัพโหลดไฟล์: $e');
     }
   }
 
   void _searchInFile() {
+    if (_fileContent.isEmpty) {
+      _showSnackBar('กรุณาอัพโหลดไฟล์ก่อนทำการค้นหา');
+      return;
+    }
+    if (_searchTerm.isEmpty) {
+      _showSnackBar('กรุณากรอกคำค้นหา');
+      return;
+    }
+
     List<String> results = [];
     List<String> lines = _fileContent.split('\n');
     Map<String, int> termCounts = {};
     int totalMatchCount = 0;
 
-    List<String> searchTerms = _searchTerm.contains(',')
-        ? _searchTerm.split(',').map((e) => e.trim()).toList()
-        : [_searchTerm];
+    List<String> searchTerms = _searchTerm.split('"').map((e) => e.trim()).toList();
+    
 
     for (var line in lines) {
       bool isMatched = false;
 
       for (var term in searchTerms) {
-        if (line.toLowerCase().contains(term.toLowerCase())) {
-          int countInLine = _countOccurrences(line, term);
+        final regex = RegExp(term, caseSensitive: false);
+        final matches = regex.allMatches(line);
+        int countInLine = matches.length;
+
+        if (countInLine > 0) {
           termCounts[term] = (termCounts[term] ?? 0) + countInLine;
           totalMatchCount += countInLine;
           isMatched = true;
@@ -83,78 +101,87 @@ class _FileSearchPageState extends State<FileSearchPage> {
       _searchResults = results;
     });
 
-    if (_searchTerm.isNotEmpty) {
-      StringBuffer resultSummary = StringBuffer();
+    StringBuffer resultSummary = StringBuffer();
 
-      termCounts.forEach((term, count) {
-        resultSummary.writeln('คำ "$term" พบ $count ครั้ง');
-      });
-      resultSummary.writeln('\nรวมทั้งหมด $totalMatchCount ครั้ง');
+    termCounts.forEach((term, count) {
+      resultSummary.writeln('คำ "$term" พบ $count ครั้ง');
+    });
+    resultSummary.writeln('\nรวมทั้งหมด $totalMatchCount ครั้ง');
 
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('ผลการค้นหา'),
-            content: Text(resultSummary.toString()),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: Text('ตกลง'),
-              ),
-            ],
-          );
-        },
-      );
-
-      // แสดงปุ่มให้ผู้ใช้บันทึกไฟล์ .csv
-      setState(() {
-        _csvFilePath = null; // ล้างเส้นทางไฟล์เก่า
-      });
-    }
-  }
-
-  int _countOccurrences(String line, String term) {
-    final lowerLine = line.toLowerCase();
-    final lowerTerm = term.toLowerCase();
-    int count = 0;
-    int index = lowerLine.indexOf(lowerTerm);
-
-    while (index != -1) {
-      count++;
-      index = lowerLine.indexOf(lowerTerm, index + lowerTerm.length);
-    }
-
-    return count;
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('ผลการค้นหา'),
+          content: Text(resultSummary.toString()),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('ตกลง'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _saveSearchResultsToCSV() async {
-    if (_searchResults.isNotEmpty) {
-      // แปลงผลการค้นหาเป็น list ของ list เพื่อใช้ใน CSV
-      List<List<dynamic>> rows = [];
-      rows.add(['ผลการค้นหา']); // หัวคอลัมน์ CSV
+    if (_searchResults.isEmpty) {
+      _showSnackBar('ไม่มีผลการค้นหาให้บันทึก');
+      return;
+    }
 
-      for (var result in _searchResults) {
-        rows.add([result]);
+    try {
+      // สร้างข้อมูลสำหรับบันทึกผลการค้นหา
+      List<List<dynamic>> rows = [
+        ['คำค้นหา',  'จำนวนครั้งที่พบ'], // หัวคอลัมน์ผลการค้นหา
+      ];
+
+      // เพิ่มข้อมูลคำค้นหาและจำนวนครั้งที่พบ
+      Map<String, int> termCounts = {};
+      List<String> searchTerms = _searchTerm.split(',').map((e) => e.trim()).toList();
+
+      for (var term in searchTerms) {
+        int totalCount = 0;
+
+        // ค้นหาคำในบรรทัด
+        for (var line in _searchResults) {
+          final regex = RegExp(term, caseSensitive: false);
+          totalCount += regex.allMatches(line).length;
+        }
+
+        if (totalCount > 0) {
+          rows.add([term, totalCount, 'พบคำที่ตรงกัน $totalCount ครั้ง']);  // เพิ่มผลการค้นหา
+        }
       }
 
-      // บันทึกไฟล์ลงที่เก็บภายนอก (External Storage)
-      final directory = await getExternalStorageDirectory();
-      final path = '${directory!.path}/search_results.csv';
+      // สร้างไฟล์ .csv
+      final directory = await getApplicationDocumentsDirectory();
+      final path = '${directory.path}/searchlog.csv'; // ที่อยู่ของไฟล์
       File file = File(path);
 
-      await file.writeAsString(const ListToCsvConverter().convert(rows));
+      // เขียนข้อมูลลงไฟล์ด้วยการเข้ารหัส UTF-8 และแทรก BOM
+      String csvData = const ListToCsvConverter().convert(rows);
+      List<int> csvBytes = utf8.encode('\uFEFF' + csvData); // แทรก BOM (\uFEFF) ในข้อมูล CSV
+
+      await file.writeAsBytes(csvBytes);
 
       setState(() {
         _csvFilePath = path;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('บันทึกผลการค้นหาลงไฟล์: $path')),
-      );
+      _showSnackBar('บันทึกผลการค้นหาลงไฟล์: $path');
+    } catch (e) {
+      _showSnackBar('เกิดข้อผิดพลาดในการบันทึกไฟล์: $e');
     }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -179,36 +206,32 @@ class _FileSearchPageState extends State<FileSearchPage> {
               ),
             ),
             SizedBox(height: 16),
-
             ElevatedButton(
               onPressed: _pickFile,
               child: Text('อัพโหลดไฟล์ .log'),
             ),
             SizedBox(height: 16),
-
             ElevatedButton(
               onPressed: _searchInFile,
               child: Text('ค้นหาในไฟล์'),
             ),
             SizedBox(height: 16),
-
             if (_searchResults.isNotEmpty)
               ElevatedButton(
                 onPressed: _saveSearchResultsToCSV,
                 child: Text('บันทึกผลการค้นหาเป็นไฟล์ .csv'),
               ),
             SizedBox(height: 16),
-
             Expanded(
               child: ListView.builder(
-                itemCount: _searchResults.isEmpty
-                    ? _fileContent.split('\n').length
-                    : _searchResults.length,
+                itemCount: _searchResults.isNotEmpty
+                    ? _searchResults.length
+                    : _fileContent.split('\n').length,
                 itemBuilder: (context, index) {
                   return ListTile(
-                    title: Text(_searchResults.isEmpty
-                        ? _fileContent.split('\n')[index]
-                        : _searchResults[index]),
+                    title: Text(_searchResults.isNotEmpty
+                        ? _searchResults[index]
+                        : _fileContent.split('\n')[index]),
                   );
                 },
               ),
